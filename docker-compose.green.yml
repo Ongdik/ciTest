@@ -1,0 +1,11 @@
+version: "3.8"
+services:
+  web:
+    container_name: rememory-green
+    image: "ongdik/rememory:green"
+    ports:
+      - "3001:3000"
+    networks:
+      - webnet
+networks:
+  webnet:

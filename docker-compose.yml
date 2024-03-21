@@ -1,9 +1,7 @@
 version: "3.8"
 services:
-  app:
+  web:
     image: ongdik/rememory:latest
-    ports:
-      - "3000:3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
