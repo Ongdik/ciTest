@@ -1,3 +1,123 @@
+# name: CICD Workflow
+
+# on:
+#   pull_request:
+#     types: [closed]
+#   workflow_dispatch:
+
+# jobs:
+#   build:
+#     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+#     runs-on: ubuntu-latest
+#     strategy:
+#       matrix:
+#         node-version: [18.x]
+
+#     steps:
+#       - uses: actions/checkout@v3
+
+#       - name: Set up Node.js
+#         uses: actions/setup-node@v3
+#         with:
+#           node-version: ${{ matrix.node-version }}
+
+#       - name: Install dependencies
+#         run: npm install
+
+#       - name: Login to Docker Hub
+#         uses: docker/login-action@v1
+#         with:
+#           username: ${{ secrets.DOCKER_USERNAME }}
+#           password: ${{ secrets.DOCKER_PASSWORD }}
+
+#       - name: Build Docker image
+#         run: |
+#           docker build -t rememory:${{ github.sha }} .
+#           docker tag rememory:${{ github.sha }} ongdik/rememory:${{ github.sha }}
+#           docker push ongdik/rememory:${{ github.sha }}
+#           docker tag rememory:${{ github.sha }} ongdik/rememory:latest
+#           docker push ongdik/rememory:latest
+
+#   deploy:
+#     needs: build
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
+
+#       - name: SSH to server and deploy
+#         uses: appleboy/ssh-action@master
+#         with:
+#           host: ${{ secrets.SERVER_HOST }}
+#           username: ${{ secrets.SERVER_USERNAME }}
+#           key: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+#           script: |
+#             mkdir -p /home/ubuntu/rememory/cicd
+#             cd /home/ubuntu/rememory/cicd
+#             docker-compose pull
+#             docker-compose up -d
+
+# name: CICD Workflow
+
+# on:
+#   pull_request:
+#     types: [closed]
+#   workflow_dispatch:
+
+# jobs:
+#   build:
+#     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+#     runs-on: ubuntu-latest
+#     strategy:
+#       matrix:
+#         node-version: [18.x]
+
+#     steps:
+#       - uses: actions/checkout@v3
+
+#       - name: Set up Node.js
+#         uses: actions/setup-node@v3
+#         with:
+#           node-version: ${{ matrix.node-version }}
+
+#       - name: Install dependencies
+#         run: npm install
+
+#       - name: Login to Docker Hub
+#         uses: docker/login-action@v1
+#         with:
+#           username: ${{ secrets.DOCKER_USERNAME }}
+#           password: ${{ secrets.DOCKER_PASSWORD }}
+
+#       - name: Build Docker image
+#         run: |
+#           docker build -t rememory:${{ github.sha }} .
+#           docker tag rememory:${{ github.sha }} ex1/rememory:${{ github.sha }}
+#           docker push ex1/rememory:${{ github.sha }}
+#           docker tag rememory:${{ github.sha }} ex1/rememory:latest
+#           docker push ex1/rememory:latest
+
+#   deploy:
+#     needs: build
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
+
+#       - name: SSH to server and deploy
+#         uses: appleboy/ssh-action@master
+#         with:
+#           host: ${{ secrets.SERVER_HOST }}
+#           username: ${{ secrets.SERVER_USERNAME }}
+#           key: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+#           script: |
+#             mkdir -p /home/ubuntu/rememory/cicd
+#             cd /home/ubuntu/rememory/cicd
+#             docker-compose pull
+#             docker-compose up -d
+
 name: CICD Workflow
 
 on:
@@ -33,10 +153,15 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t rememory:${{ github.sha }} .
-          docker tag rememory:${{ github.sha }} ongdik/rememory:${{ github.sha }}
-          docker push ongdik/rememory:${{ github.sha }}
+
           docker tag rememory:${{ github.sha }} ongdik/rememory:latest
           docker push ongdik/rememory:latest
+
+          docker tag rememory:${{ github.sha }} ongdik/rememory:blue
+          docker push ongdik/rememory:blue
+
+          docker tag rememory:${{ github.sha }} ongdik/rememory:green
+          docker push ongdik/rememory:green
 
   deploy:
     needs: build
@@ -53,7 +178,20 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
           script: |
+            export AFTER_COMPOSE_COLOR=$(if [ "$(docker-compose -p blue ps -q web | wc -l)" = "0" ]; then echo "green"; else echo "blue"; fi)
+            export BEFORE_COMPOSE_COLOR=$(if [ "$AFTER_COMPOSE_COLOR" = "blue" ]; then echo "green"; else echo "blue"; fi)
+
             mkdir -p /home/ubuntu/rememory/cicd
             cd /home/ubuntu/rememory/cicd
-            docker-compose pull
-            docker-compose up -d
+            docker-compose -f docker-compose.$AFTER_COMPOSE_COLOR.yml pull
+            docker-compose -f docker-compose.$AFTER_COMPOSE_COLOR.yml up -d --no-deps --build web
+            PORT=$(if [ "$AFTER_COMPOSE_COLOR" = "blue" ]; then echo "3000"; else echo "3001"; fi)
+            until $(curl --output /dev/null --silent --head --fail http://localhost:$PORT); do
+              printf '.'
+              sleep 5
+            done
+            sudo rm -f /etc/nginx/sites-enabled/default
+            sudo ln -sfn /etc/nginx/sites-available/nginx.$AFTER_COMPOSE_COLOR.conf /etc/nginx/sites-enabled/default
+            sudo nginx -s reload
+            docker-compose -p $BEFORE_COMPOSE_COLOR down
+            echo "$BEFORE_COMPOSE_COLOR down"
